@@ -1,0 +1,12 @@
+name: myTaskmaster
+title: myTaskmaster
+username:
+account: skuldomg
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2216980
+bundleId: 3086997
+url: https://skuldomg.shinyapps.io/myTaskmaster/
+when: 1588270668.28979
+asMultiple: FALSE
+asStatic: FALSE
