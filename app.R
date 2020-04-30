@@ -9,6 +9,7 @@
 
 # TODO: More than one current task possible
 # TODO: Separate thingies for create new task and add word count
+# TODO: Super graphics
 
 library(shiny)
 library(shinythemes)
