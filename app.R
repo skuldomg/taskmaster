@@ -8,7 +8,7 @@
 #
 
 # TODO: More than one current task possible
-# TODO: Separate thingies for create new task and add word count
+# TODO: Make UI better
 # TODO: Super graphics
 
 library(shiny)
@@ -18,8 +18,10 @@ library(googlesheets4)
 library(DT)
 library(tibble)
 library(stringr)
+library(dplyr)
+library(lubridate)
 
-source("getDetails.R")
+source("helpFunctions.R")
 
 # the sheet ID
 ss <- "1HwdbcGaXf1kUz6Ot0ufT_y4l4Yp76QDGzk6aeXDuOgo"
@@ -49,20 +51,22 @@ ui <- dashboardPage(
             menuItem("Details", tabName = "details", icon = icon("th"))
         )
     ),
-    
-    # Show a plot of the generated distribution
+     
     dashboardBody(
         tabItems(
             tabItem(tabName = "home",
                     h2("Home"),
                     hr(),
-                    uiOutput("homeUi")
+                    uiOutput("homeUi"),
+                    plotOutput("plotUi", width = "50%")
                     ),
             
             tabItem(tabName = "details",
                     h2("Details"),
                     hr(),
-                    uiOutput("myUi"),
+                    uiOutput("newTaskUi"),
+                    hr(),
+                    uiOutput("addWordsUi"),
                     hr(),
                     DT::dataTableOutput("tasktable"),
                     hr(),
@@ -75,20 +79,47 @@ ui <- dashboardPage(
 server <- function(input, output, session) {
     
     # Home tab
+    # TODO: Make it update properly after entering new data
+    # TODO: Make it work for more than one concurrent task
     output$homeUi <- renderUI({
         
         activeTasks <- with(taskdata, taskdata[(as.Date(finishDate) >= Sys.Date()), ])
-        
+        theDetails <- getDetails(activeTasks)
         
             tagList(
                 h3("Current tasks"),
-                getDetails(activeTasks)
+                fluidRow(
+                    box(
+                        h4(theDetails$taskname),
+                        p("Words left:", theDetails$wordsleft),
+                        p("Work days left:", theDetails$daysleft),
+                        p("Percentage done:", theDetails$percdone, "%"),
+                        p("Average words done per day:", theDetails$wordsperday),
+                        p("Words per day needed to finish on time:", theDetails$wpdgoal),
+                        strong(theDetails$record)
+                    )
+                )#,
+                #plotOutput("wpdPlot", width = "50%")
             )
         
     })
     
+    # TODO: Actually get it by corresponding index
+    output$plotUi <- renderPlot({
+        
+        # Read details of the task
+        theDetails <- getDetails(taskdata, 2)
+        
+        # Get the plot of the task, set y-limit to words per day needed
+        getWpdPlot(taskdata, 2, c(0, (as.numeric(theDetails$wpdgoal))))
+        abline(h = theDetails$wpdgoal, col = "red")
+        abline(h = theDetails$wordsperday, col = "green")
+        legend("bottom", xpd = TRUE, horiz = TRUE, inset = c(0.02, -0.25), legend = c("Words per day needed", "Actual words per day"), lty = 1, col = c("red", "green"), box.lty = 0)
+    })
+    
     # Detail tab
-    output$myUi <- renderUI({
+    # Add new task
+    output$newTaskUi <- renderUI({
         
         tagList(
             h3("Enter new task"),
@@ -102,8 +133,19 @@ server <- function(input, output, session) {
         )
     })
     
+    # Add words to existing project
+    output$addWordsUi <- renderUI({
+        
+        tagList(
+            textInput(inputId = "addWords", label = "Words done today"),
+            actionButton("saveWords", label = "Save")
+        )
+        
+    })
+    
     output$tasktable <- DT::renderDataTable({
         input$saveTask
+        input$saveWords
         input$reload
         
         outtable <- reactiveVal(taskdata)
@@ -112,15 +154,83 @@ server <- function(input, output, session) {
     
     output$myStatus <- renderUI({
         rowIndex <- input$tasktable_rows_selected
-        
-        getDetails(taskdata, rowIndex)
+
+        if(!is.null(rowIndex)) {
+            theDetails <- getDetails(taskdata, rowIndex)
+            
+            tagList(
+                h3("Current tasks"),
+                fluidRow(
+                    box(
+                        h4(theDetails$taskname),
+                        p("Words left:", theDetails$wordsleft),
+                        p("Work days left:", theDetails$daysleft),
+                        p("Percentage done:", theDetails$percdone, "%"),
+                        p("Average words done per day:", theDetails$wordsperday),
+                        p("Words per day needed to finish on time:", theDetails$wpdgoal),
+                        strong(theDetails$record)
+                    )
+                ))
+        }
     })
     
-    # Prefill input fields with currently selected row
-    observeEvent(input$tasktable_rows_selected, {
+    # # Prefill input fields with currently selected row
+    # observeEvent(input$tasktable_rows_selected, {
+    #     rowIndex <- input$tasktable_rows_selected
+    #     updateTextInput(session, "taskInput", value = taskdata$taskname[rowIndex])
+    #     updateTextInput(session, "wordsDone", value = taskdata$wordsDone[rowIndex])
+    # })
+    
+    # Save words
+    observeEvent(input$saveWords, {
         rowIndex <- input$tasktable_rows_selected
-        updateTextInput(session, "taskInput", value = taskdata$taskname[rowIndex])
-        updateTextInput(session, "wordsDone", value = taskdata$wordsDone[rowIndex])
+        
+        if(!is.null(rowIndex)) {
+            today <- Sys.Date()
+            todaysWords <- as.numeric(input$addWords)
+            
+            # Find the first day column that doesn't have any data and put the data there
+            # If all are full, add a new day column
+            firstNa <- first(which(is.na(taskdata[rowIndex, ])))
+            
+            if(!is.na(firstNa)) {
+                # Write date and word count
+                taskdata[rowIndex, ] <<- replace(taskdata[rowIndex, ], c(firstNa), c(today))
+                taskdata[rowIndex, ] <<- replace(taskdata[rowIndex, ], c(firstNa+1), c(todaysWords))
+            }
+            else {
+                # Get number of last day entered
+                lastColName <- last(colnames(taskdata))
+                
+                if(str_length(lastColName) == 9)
+                    dayNo <- as.numeric(substr(lastColName, 9, 9))+1
+                else
+                    dayNo <- as.numeric(substr(lastColName, 9, 10))+1
+                
+                # Problem: We fill all new rows with the info that way
+                taskdata <<- taskdata %>% add_column(!!(paste0("day", dayNo)) := today, !!(paste0("wordsDay", dayNo)) := todaysWords)
+                
+                newCol1Index <- ncol(taskdata)-1
+                newCol2Index <- ncol(taskdata)
+                
+                # Delete values of all rows that are not our current one
+                
+                for(row in rownames(taskdata)) {
+                    if(as.numeric(row) != as.numeric(rowIndex)) {
+                        taskdata[as.numeric(row), newCol1Index] <- NA
+                        taskdata[as.numeric(row), newCol2Index] <- NA
+                    }
+                }
+                # Write to global
+                taskdata <<- taskdata
+            }
+            
+            # Update total wordcount
+            taskdata[rowIndex, ]$wordsDone <<- taskdata[rowIndex, ]$wordsDone + todaysWords
+            
+            updateTextInput(session, "addWords", value = "")
+            
+        }
     })
     
     # Save a new task
@@ -157,10 +267,8 @@ server <- function(input, output, session) {
                 )
             
         }
-        else {
-            print("Wait what")
+        else 
             taskdata <<- taskdata %>% add_row(taskname = input$taskInput, finishDate = as.Date(input$finishDate, "%d.%m.%y"), wordsDone = as.numeric(input$wordsDone), wordGoal = as.numeric(input$wordGoal))
-        }
         
         # empty text input fields
         updateTextInput(session, "taskInput", value = "")
