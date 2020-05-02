@@ -78,10 +78,11 @@ getDetails <- function(tasks, index = 1) {
 # Returns a barplot of the words per day for a given project
 # Expects a dataframe with tasks, row of the task and an optional ylimit for the barplot
 getWpdPlot <- function(tasks, index, ylimit = NULL) {
-  # Construct a df for plot containing only the dates and wordcounts
+  # Construct a df for plot containing only the dates, wordcounts and words per day according to the respective day
   count <- 0
   theDf <- tibble()
-  theDf <- theDf %>% add_column(date = as.Date(character()), words = numeric())
+  theDf <- theDf %>% add_column(date = as.Date(character()), words = numeric(), currentWpd = numeric())
+  wordsum <- 0
   
   for(name in colnames(tasks)) {
     count <- count+1
@@ -94,14 +95,22 @@ getWpdPlot <- function(tasks, index, ylimit = NULL) {
     }
     
     if(startsWith(name, "wordsDay")) {
-      theWords <- tasks[[index, count]]
+      theWords <- as.numeric(tasks[[index, count]])
       
       # print(paste0("Count in column ", count, ": ", theWords))
       
-      # As soon as we have a word column, we've had the corresponding date immediately before
-      theDf <- theDf %>% add_row(date = theDate, words = theWords)
+      # As soon as we have a word column, we've had the corresponding date immediately before and can add a new row
+      # get day number for calculating current wpd
+      
+      wordsum <- wordsum + theWords
+      theDay <- as.numeric(substr(name, 9, 999))
+      theDf <- theDf %>% add_row(date = theDate, words = theWords, currentWpd = wordsum/theDay)
     }
   }
   
-  barplot(height = theDf$words, main = "Words per day", xlab = "Days", ylab = "Words", names.arg = theDf$date, ylim = ylimit)
+  # Plot words and words per day according to day
+  bp <- barplot(height = theDf$words, main = "Words per day", xlab = "Days", ylab = "Words", names.arg = theDf$date, ylim = ylimit)
+  lines(x = bp, y = theDf$currentWpd, col = "green")
+  points(x = bp, y = theDf$currentWpd, col = "green")
+  
 }

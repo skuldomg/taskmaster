@@ -111,10 +111,10 @@ server <- function(input, output, session) {
         theDetails <- getDetails(taskdata, 2)
         
         # Get the plot of the task, set y-limit to words per day needed
-        getWpdPlot(taskdata, 2, c(0, (as.numeric(theDetails$wpdgoal))))
-        abline(h = theDetails$wpdgoal, col = "red")
-        abline(h = theDetails$wordsperday, col = "green")
-        legend("bottom", xpd = TRUE, horiz = TRUE, inset = c(0.05, -0.25), legend = c("Words per day needed", "Actual words per day"), lty = 1, col = c("red", "green"), box.lty = 0)
+        thePlot <- getWpdPlot(taskdata, 2)
+        #abline(h = theDetails$wpdgoal, col = "red")
+        # abline(h = theDetails$wordsperday, col = "green")
+        legend("bottom", xpd = TRUE, horiz = TRUE, inset = c(0.05, -0.25), legend = c("Average words per day"), lty = 1, col = c("green"), box.lty = 0)
     })
     
     # Detail tab
