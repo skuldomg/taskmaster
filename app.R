@@ -58,7 +58,14 @@ ui <- dashboardPage(
                     h2("Home"),
                     hr(),
                     uiOutput("homeUi"),
-                    plotOutput("plotUi", width = "50%")
+                    fluidRow(
+                        splitLayout(
+                            cellWidths = c("33%", "33%"),
+                            plotOutput("plot1"),
+                            plotOutput("plot2"),
+                            style = "width:75%"
+                        )
+                    )
                     ),
             
             tabItem(tabName = "details",
@@ -105,16 +112,17 @@ server <- function(input, output, session) {
     })
     
     # TODO: Actually get it by corresponding index
-    output$plotUi <- renderPlot({
+    output$plot1 <- renderPlot({
         
         # Read details of the task
-        theDetails <- getDetails(taskdata, 2)
+        #theDetails <- getDetails(taskdata, 2)
         
-        # Get the plot of the task, set y-limit to words per day needed
-        thePlot <- getWpdPlot(taskdata, 2)
-        #abline(h = theDetails$wpdgoal, col = "red")
-        # abline(h = theDetails$wordsperday, col = "green")
-        legend("bottom", xpd = TRUE, horiz = TRUE, inset = c(0.05, -0.25), legend = c("Average words per day"), lty = 1, col = c("green"), box.lty = 0)
+        # Get the plot of the task
+        getWpdPlot(taskdata, 2)
+    })
+    
+    output$plot2 <- renderPlot({
+        getCumWordsPlot(taskdata, 2)
     })
     
     # Detail tab
