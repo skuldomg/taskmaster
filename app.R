@@ -9,7 +9,7 @@
 
 # TODO: More than one current task possible
 # TODO: Make UI better
-# TODO: Super graphics
+# TODO: Fix double save bug
 
 library(shiny)
 library(shinythemes)
@@ -28,6 +28,16 @@ ss <- "1HwdbcGaXf1kUz6Ot0ufT_y4l4Yp76QDGzk6aeXDuOgo"
 
 # Read task data from Googlesheet
 taskdata <- range_read(ss)
+
+# Transform to proper date format
+taskdata <- as_tibble(transform(taskdata, startDate = as.Date(startDate)))
+taskdata <- as_tibble(transform(taskdata, finishDate = as.Date(finishDate)))
+
+for(c in 1:ncol(taskdata)) {
+    if(startsWith(colnames(taskdata[, c]), "day")) {
+       taskdata[[colnames(taskdata[, c])]] <- as.Date(taskdata[[colnames(taskdata[, c])]])
+    }
+}
 
 # Write back to Googlesheets when closing
 onStop(function() {
@@ -90,20 +100,25 @@ server <- function(input, output, session) {
     # TODO: Make it work for more than one concurrent task
     output$homeUi <- renderUI({
         
+        input$saveTask
+        input$saveWords
+        
         activeTasks <- with(taskdata, taskdata[(as.Date(finishDate) >= Sys.Date()), ])
         theDetails <- getDetails(activeTasks)
+        
+        detls <- reactiveVal(theDetails)
         
             tagList(
                 h3("Current tasks"),
                 fluidRow(
                     box(
                         h4(theDetails$taskname),
-                        p("Words left:", theDetails$wordsleft),
-                        p("Work days left:", theDetails$daysleft),
-                        p("Percentage done:", theDetails$percdone, "%"),
-                        p("Average words done per day:", theDetails$wordsperday),
-                        p("Words per day needed to finish on time:", theDetails$wpdgoal),
-                        strong(theDetails$record)
+                        p("Words left:", isolate(detls()$wordsleft)),#theDetails$wordsleft),
+                        p("Work days left:", isolate(detls()$daysleft)),#theDetails$daysleft),
+                        p("Percentage done:", isolate(detls()$percdone), "%"),#theDetails$percdone, "%"),
+                        p("Average words done per day:", isolate(detls()$wordsperday)),#theDetails$wordsperday),
+                        p("Words per day needed to finish on time:", isolate(detls()$wpdgoal)),#theDetails$wpdgoal),
+                        strong(isolate(detls()$record))#theDetails$record)
                     )
                 )#,
                 #plotOutput("wpdPlot", width = "50%")
@@ -114,15 +129,25 @@ server <- function(input, output, session) {
     # TODO: Actually get it by corresponding index
     output$plot1 <- renderPlot({
         
-        # Read details of the task
-        #theDetails <- getDetails(taskdata, 2)
+        input$saveTask
+        input$saveWords
+        
+        tasks <- taskdata
+        makeReactiveBinding("tasks")
         
         # Get the plot of the task
-        getWpdPlot(taskdata, 2)
+        getWpdPlot(isolate(tasks <- taskdata), 2)
     })
     
     output$plot2 <- renderPlot({
-        getCumWordsPlot(taskdata, 2)
+        
+        input$saveTask
+        input$saveWords
+        
+        tasks <- taskdata
+        makeReactiveBinding("tasks")
+        
+        getCumWordsPlot(isolate(tasks <- taskdata), 2)
     })
     
     # Detail tab
@@ -155,7 +180,7 @@ server <- function(input, output, session) {
         input$saveTask
         input$saveWords
         input$reload
-        
+
         outtable <- reactiveVal(taskdata)
         DT::datatable(isolate(outtable()), selection = "single", rownames = FALSE)
     })
@@ -182,13 +207,6 @@ server <- function(input, output, session) {
         }
     })
     
-    # # Prefill input fields with currently selected row
-    # observeEvent(input$tasktable_rows_selected, {
-    #     rowIndex <- input$tasktable_rows_selected
-    #     updateTextInput(session, "taskInput", value = taskdata$taskname[rowIndex])
-    #     updateTextInput(session, "wordsDone", value = taskdata$wordsDone[rowIndex])
-    # })
-    
     # Save words
     observeEvent(input$saveWords, {
         rowIndex <- input$tasktable_rows_selected
@@ -197,40 +215,58 @@ server <- function(input, output, session) {
             today <- Sys.Date()
             todaysWords <- as.numeric(input$addWords)
             
-            # Find the first day column that doesn't have any data and put the data there
-            # If all are full, add a new day column
-            firstNa <- first(which(is.na(taskdata[rowIndex, ])))
+            # Find last date in the row
+            lastDate <- NA
+            lastDateIndex <- -1
+            for(c in 1:ncol(taskdata)) {
+                if(is.Date(taskdata[[rowIndex, c]])) {
+                    lastDate <- taskdata[[rowIndex, c]]
+                    lastDateIndex <- as.numeric(c)
+                }
+            }
             
-            if(!is.na(firstNa)) {
-                # Write date and word count
-                taskdata[rowIndex, ] <<- replace(taskdata[rowIndex, ], c(firstNa), c(today))
-                taskdata[rowIndex, ] <<- replace(taskdata[rowIndex, ], c(firstNa+1), c(todaysWords))
+            # If we have one, and it is the same as today, don't add a new day
+            if(!is.na(lastDate) && (today - lastDate == 0)) {
+                print("We already have data for today. Adding..")
+                taskdata[rowIndex, ] <<- replace(taskdata[rowIndex, ], c(lastDateIndex+1), c(taskdata[[rowIndex, lastDateIndex+1]]+todaysWords))
             }
             else {
-                # Get number of last day entered
-                lastColName <- last(colnames(taskdata))
+            
+                # Find the first day column that doesn't have any data and put the data there
+                # If all are full, add a new day column
+                firstNa <- first(which(is.na(taskdata[rowIndex, ])))
                 
-                if(str_length(lastColName) == 9)
-                    dayNo <- as.numeric(substr(lastColName, 9, 9))+1
-                else
-                    dayNo <- as.numeric(substr(lastColName, 9, 10))+1
-                
-                # Problem: We fill all new rows with the info that way
-                taskdata <<- taskdata %>% add_column(!!(paste0("day", dayNo)) := today, !!(paste0("wordsDay", dayNo)) := todaysWords)
-                
-                newCol1Index <- ncol(taskdata)-1
-                newCol2Index <- ncol(taskdata)
-                
-                # Delete values of all rows that are not our current one
-                
-                for(row in rownames(taskdata)) {
-                    if(as.numeric(row) != as.numeric(rowIndex)) {
-                        taskdata[as.numeric(row), newCol1Index] <- NA
-                        taskdata[as.numeric(row), newCol2Index] <- NA
-                    }
+                if(!is.na(firstNa)) {
+                    # Write date and word count
+                    taskdata[rowIndex, ] <<- replace(taskdata[rowIndex, ], c(firstNa), c(today))
+                    taskdata[rowIndex, ] <<- replace(taskdata[rowIndex, ], c(firstNa+1), c(todaysWords))
                 }
-                # Write to global
-                taskdata <<- taskdata
+                else {
+                    # Get number of last day entered
+                    lastColName <- last(colnames(taskdata))
+                    
+                    if(str_length(lastColName) == 9)
+                        dayNo <- as.numeric(substr(lastColName, 9, 9))+1
+                    else
+                        dayNo <- as.numeric(substr(lastColName, 9, 10))+1
+                    
+                    # Problem: We fill all new rows with the info that way
+                    taskdata <<- taskdata %>% add_column(!!(paste0("day", dayNo)) := today, !!(paste0("wordsDay", dayNo)) := todaysWords)
+                    
+                    newCol1Index <- ncol(taskdata)-1
+                    newCol2Index <- ncol(taskdata)
+                    
+                    # Delete values of all rows that are not our current one
+                    
+                    for(row in rownames(taskdata)) {
+                        if(as.numeric(row) != as.numeric(rowIndex)) {
+                            taskdata[as.numeric(row), newCol1Index] <- NA
+                            taskdata[as.numeric(row), newCol2Index] <- NA
+                        }
+                    }
+                    # Write to global
+                    taskdata <<- taskdata
+                }
             }
             
             # Update total wordcount
