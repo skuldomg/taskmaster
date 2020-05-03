@@ -39,13 +39,6 @@ for(c in 1:ncol(taskdata)) {
     }
 }
 
-# Write back to Googlesheets when closing
-onStop(function() {
-    print("Saving...")
-    write_sheet(taskdata, ss, sheet = 1)
-    print("... done.")
-})
-
 # Define UI for application that draws a histogram
 ui <- dashboardPage(
     
@@ -94,6 +87,13 @@ ui <- dashboardPage(
 
 # Define server logic required to draw a histogram
 server <- function(input, output, session) {
+    
+    # Write back to Googlesheets when closing
+    onStop(function() {
+        print("Saving...")
+        write_sheet(taskdata, ss, sheet = 1)
+        print("... done.")
+    })
     
     # Home tab
     # TODO: Make it update properly after entering new data
