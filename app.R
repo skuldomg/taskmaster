@@ -61,14 +61,15 @@ ui <- dashboardPage(
                     h2("Home"),
                     hr(),
                     uiOutput("homeUi"),
-                    fluidRow(
-                        splitLayout(
-                            cellWidths = c("33%", "33%"),
-                            plotOutput("plot1"),
-                            plotOutput("plot2"),
-                            style = "width:75%"
-                        )
-                    )
+                    uiOutput("plotUi"),
+                    #fluidRow(
+                    #    splitLayout(
+                    #        cellWidths = c("33%", "33%"),
+                    #        plotOutput("plot1"),
+                    #        plotOutput("plot2"),
+                    #        style = "width:75%"
+                    #    )
+                    # )
                     ),
             
             tabItem(tabName = "details",
@@ -120,10 +121,20 @@ server <- function(input, output, session) {
                         p("Words per day needed to finish on time:", isolate(detls()$wpdgoal)),#theDetails$wpdgoal),
                         strong(isolate(detls()$record))#theDetails$record)
                     )
-                )#,
-                #plotOutput("wpdPlot", width = "50%")
+                )
             )
         
+    })
+    
+    output$plotUi <- renderUI({
+        fluidRow(
+            splitLayout(
+                cellWidths = c("33%", "33%"),
+                plotOutput("plot1"),
+                plotOutput("plot2"),
+                style = "width:75%"
+            )
+        )
     })
     
     # TODO: Actually get it by corresponding index
@@ -203,7 +214,8 @@ server <- function(input, output, session) {
                         p("Words per day needed to finish on time:", theDetails$wpdgoal),
                         strong(theDetails$record)
                     )
-                ))
+                )
+                )
         }
     })
     

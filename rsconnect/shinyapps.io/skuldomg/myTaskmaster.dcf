@@ -5,8 +5,8 @@ account: skuldomg
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2216980
-bundleId: 3094128
+bundleId: 3105442
 url: https://skuldomg.shinyapps.io/myTaskmaster/
-when: 1588438113.15356
+when: 1588674089.01555
 asMultiple: FALSE
 asStatic: FALSE
